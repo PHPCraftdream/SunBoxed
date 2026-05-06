@@ -157,12 +157,7 @@ function configurePaths() {
 }
 
 function removeBoxConfig() {
-  const settings = [
-    "Enabled", "FileRootPath", "ConfigLevel", "BlockNetworkFiles",
-    "Template", "OpenIpcPath", "OpenFilePath", "ClosedFilePath",
-    "OpenPipePath", "BlockNetworkConnect",
-  ];
-  for (const s of settings) sbiDel(s);
+  sbie("set", box, "Enabled", "n");
 }
 
 function detectTermSize() {
