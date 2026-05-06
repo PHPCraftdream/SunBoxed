@@ -13,10 +13,7 @@ bin/
 ├── sunboxed.js           — main logic: arg parsing, sandbox config, relay, snapshots
 └── sunboxed-host.js      — PTY host (runs INSIDE sandbox, creates ConPTY via node-pty)
 scripts/
-├── sunboxed.cmd          — thin wrapper: calls node bin/sunboxed.js
-├── cc75.cmd              — Claude Code 2.1.75 via sunboxed
-├── sunboxed-install-user.cmd      — add scripts/ to user PATH
-└── sunboxed-install-system.cmd    — add scripts/ to system PATH (admin)
+└── sunboxed.cmd          — thin wrapper: calls node bin/sunboxed.js
 tests/
 ├── run-all.js            — test runner (npm test), supports sync + async suites
 ├── helpers.js            — shared test utilities

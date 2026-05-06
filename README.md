@@ -47,7 +47,7 @@ The TCP relay binds to `127.0.0.1` only (not accessible from network) and requir
 npm install -g sunboxed
 ```
 
-This installs `sunboxed` and `cc75` commands globally.
+This installs the `sunboxed` command globally.
 
 ### Via npx (no install)
 
@@ -61,13 +61,9 @@ npx sunboxed node build.js
 git clone https://github.com/PHPCraftdream/SunBoxed.git
 cd SunBoxed
 npm install
-
-:: Add to current user's PATH
-scripts\sunboxed-install-user.cmd
-
-:: Or system-wide (requires admin)
-scripts\sunboxed-install-system.cmd
 ```
+
+Then add the `scripts\` folder to your PATH manually.
 
 ## Usage
 
@@ -110,9 +106,6 @@ sunboxed /net-block /deny:.env node app.js
 :: Read-only analysis (no writes anywhere on real disk)
 sunboxed /readonly node analyze.js
 
-:: Claude Code in sandbox (pinned version)
-cc75
-
 :: Snapshot before risky agent run, restore if needed
 sunboxed /snap create before-refactor
 sunboxed claude
@@ -135,15 +128,15 @@ Each directory gets its own Sandboxie box (name derived from SHA-256 hash of the
 - `ConfigLevel=99` — no auto-templates
 - `Template=BlockPorts` — blocks SMB (ports 137-445)
 - `BlockNetworkFiles=y` — blocks network shares
-- `OpenIpcPath=*` / `OpenPipePath=*` — allows IPC (required for relay)
+- `OpenIpcPath=*` — allows IPC (required for relay)
 - SandMan GUI killed on each run (nag popup prevention)
 
 ### Execution modes
 
 | Condition | Mode | How |
 |-----------|------|-----|
-| stdin is TTY + node-pty available | **Relay** | TCP localhost, ConPTY inside sandbox |
-| stdin is pipe / no node-pty | **Hidden** | `Start.exe /hide_window /wait` |
+| node-pty available (default) | **Relay** | TCP localhost, ConPTY inside sandbox |
+| no node-pty | **Hidden** | `Start.exe /hide_window /wait` (fallback) |
 | `/tty` flag | **Terminal** | Opens WezTerm/WT inside sandbox |
 | `/show` flag | **Visible** | `Start.exe /wait` (visible window) |
 

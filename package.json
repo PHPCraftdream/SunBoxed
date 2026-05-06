@@ -33,9 +33,6 @@
   "files": [
     "bin/",
     "scripts/sunboxed.cmd",
-    "scripts/cc75.cmd",
-    "scripts/sunboxed-install-user.cmd",
-    "scripts/sunboxed-install-system.cmd",
     "README.md",
     "LICENSE"
   ],

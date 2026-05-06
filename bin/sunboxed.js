@@ -112,16 +112,11 @@ killGui();
 harden();
 configurePaths();
 
-const mode = flags.tty ? "tty" : flags.show ? "show" : (hasPty && !flags.noPty) ? "relay" : "hidden";
-if (process.env.SUNBOXED_DEBUG) {
-  try { fs.appendFileSync(process.env.SUNBOXED_DEBUG, `mode=${mode} hasPty=${hasPty} isTTY=${process.stdin.isTTY} box=${box} cwd=${cwd}\n`); } catch(_) {}
-}
-
-if (mode === "tty") {
+if (flags.tty) {
   runTty(cmdArgs);
-} else if (mode === "show") {
+} else if (flags.show) {
   runShow(cmdArgs);
-} else if (mode === "relay") {
+} else if (hasPty && !flags.noPty) {
   runRelay(cmdArgs);
 } else {
   runHidden(cmdArgs);
@@ -136,12 +131,6 @@ function harden() {
   sbie("set", box, "BlockNetworkFiles", "y");
   sbie("set", box, "Template", "BlockPorts");
   sbie("append", box, "OpenIpcPath", "*");
-
-  if (process.env.SUNBOXED_DEBUG) {
-    // Verify config was written
-    const q = sbiQuery("Enabled");
-    try { fs.appendFileSync(process.env.SUNBOXED_DEBUG, `harden: box=${box} Enabled=${JSON.stringify(q)} SBIE_INI=${SBIE_INI}\n`); } catch(_) {}
-  }
 }
 
 function configurePaths() {
