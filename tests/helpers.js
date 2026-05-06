@@ -1,8 +1,8 @@
 /**
- * Shared test helpers for sunboxed.cmd integration tests.
+ * Shared test helpers for sunboxed integration tests.
  */
 
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -83,7 +83,7 @@ function overlayPath(ws) {
 }
 
 function boxName(cwd) {
-  // Must match PowerShell in sunboxed.cmd: single backslashes, no JS escaping
+  // Must match sunboxed.js hash: uses cwd as-is (backslashes on Windows)
   const normalized = cwd.replace(/\//g, "\\");
   const hash = crypto.createHash("sha256").update(normalized).digest("hex").substring(0, 16).toUpperCase();
   return `_SB_${hash}`;

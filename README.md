@@ -14,17 +14,30 @@ SunBoxed makes it safe: the agent runs with full permissions **inside a sandbox*
 - **Faster iterations** — the agent acts immediately instead of waiting for approval
 - **Safe to experiment** — worst case, `sunboxed /snap restore` rolls back CWD to a saved state
 
+### Interactive TUI support
+
+SunBoxed includes a TCP relay that creates a ConPTY inside the sandbox, allowing **full interactive TUI apps** (Claude Code, vim, htop) to work in your current terminal. This solves the fundamental problem where Sandboxie's kernel driver blocks `setRawMode`/`SetConsoleMode` for sandboxed processes.
+
+When you run `sunboxed claude` in a terminal, it automatically:
+1. Starts a PTY host inside the sandbox (via node-pty)
+2. Connects it to your terminal via a localhost TCP relay
+3. Authenticates with a per-session 128-char token
+4. Forwards all input/output transparently (including Ctrl keys, resize, alternate screen)
+
 ### Security model
 
 SunBoxed uses Sandboxie-Plus for isolation, which is designed to protect against **accidental damage** — a coding agent doing `rm -rf /`, writing to wrong directories, corrupting system files, etc.
 
 **This is NOT a security boundary against targeted attacks.** Sandboxie is not designed to contain malware actively trying to escape the sandbox. Do not use SunBoxed as protection against untrusted/hostile code — use a VM or container for that.
 
+The TCP relay binds to `127.0.0.1` only (not accessible from network) and requires a cryptographically random auth token generated per session.
+
 ## Requirements
 
 - Windows 10/11
 - [Sandboxie-Plus](https://sandboxie-plus.com/) v1.x installed at `C:\Program Files\Sandboxie-Plus\`
-- PowerShell (for box name hashing; fallback to dirname if unavailable)
+- Node.js 18+
+- `node-pty` (installed automatically as a dependency; required for interactive/TUI mode)
 
 ## Install
 
@@ -34,16 +47,7 @@ SunBoxed uses Sandboxie-Plus for isolation, which is designed to protect against
 npm install -g sunboxed
 ```
 
-This installs `sunboxed` and `cc75` commands globally. If the npm global bin directory is not in your PATH:
-
-```cmd
-:: Find where npm installs global binaries
-npm config get prefix
-
-:: Add that path\bin to your user PATH (one time)
-:: Example: if prefix is C:\Users\You\AppData\Roaming\npm
-setx PATH "%PATH%;C:\Users\You\AppData\Roaming\npm"
-```
+This installs `sunboxed` and `cc75` commands globally.
 
 ### Via npx (no install)
 
@@ -56,6 +60,7 @@ npx sunboxed node build.js
 ```cmd
 git clone https://github.com/PHPCraftdream/SunBoxed.git
 cd SunBoxed
+npm install
 
 :: Add to current user's PATH
 scripts\sunboxed-install-user.cmd
@@ -81,6 +86,9 @@ sunboxed /snap delete <name>        Delete snapshot
 |------|--------|
 | `/net-block` | Block all network access (see [note on localhost](#known-limitations)) |
 | `/readonly` | CWD is also sandboxed (read-only analysis) |
+| `/no-pty` | Disable ConPTY relay (force hidden window mode) |
+| `/show` | Show command window (default: hidden in non-TTY mode) |
+| `/tty` | Launch in a separate terminal emulator (WezTerm/WT) |
 | `/allow:<path>` | Only allow writes to specific subdirs (relative to CWD) |
 | `/deny:<path>` | Block all access to specific files/dirs (relative to CWD) |
 
@@ -89,6 +97,9 @@ sunboxed /snap delete <name>        Delete snapshot
 ```cmd
 :: Run node script, only CWD writable
 sunboxed node build.js
+
+:: Interactive TUI app in sandbox (auto-detects terminal)
+sunboxed claude
 
 :: Only allow writes to src/ and dist/
 sunboxed /allow:src /allow:dist -- node build.js
@@ -99,12 +110,12 @@ sunboxed /net-block /deny:.env node app.js
 :: Read-only analysis (no writes anywhere on real disk)
 sunboxed /readonly node analyze.js
 
-:: Claude Code in sandbox
+:: Claude Code in sandbox (pinned version)
 cc75
 
 :: Snapshot before risky agent run, restore if needed
 sunboxed /snap create before-refactor
-cc75
+sunboxed claude
 sunboxed /snap restore before-refactor
 ```
 
@@ -124,7 +135,17 @@ Each directory gets its own Sandboxie box (name derived from SHA-256 hash of the
 - `ConfigLevel=99` — no auto-templates
 - `Template=BlockPorts` — blocks SMB (ports 137-445)
 - `BlockNetworkFiles=y` — blocks network shares
+- `OpenIpcPath=*` / `OpenPipePath=*` — allows IPC (required for relay)
 - SandMan GUI killed on each run (nag popup prevention)
+
+### Execution modes
+
+| Condition | Mode | How |
+|-----------|------|-----|
+| stdin is TTY + node-pty available | **Relay** | TCP localhost, ConPTY inside sandbox |
+| stdin is pipe / no node-pty | **Hidden** | `Start.exe /hide_window /wait` |
+| `/tty` flag | **Terminal** | Opens WezTerm/WT inside sandbox |
+| `/show` flag | **Visible** | `Start.exe /wait` (visible window) |
 
 Overlay persists between runs — the app sees its own previously written files on next launch (cascading reads). Use `sunboxed /reset` to start fresh.
 
@@ -144,9 +165,9 @@ Stored at `..\.sbox\<dirname>\__snapshots__\<name>\`. Excludes `.git`, `node_mod
 ## Known Limitations
 
 - **Not a security boundary.** Sandboxie protects against accidents, not targeted sandbox-escape exploits. See [Security model](#security-model).
-- **`/net-block` does not block localhost.** Loopback connections (127.0.0.1, localhost) remain accessible. A sandboxed agent can still reach local services like Docker, Ollama, databases, or MCP servers. This is usually desirable for AI agents but worth knowing.
+- **`/net-block` does not block localhost.** Loopback connections (127.0.0.1, localhost) remain accessible. The relay itself uses localhost TCP. A sandboxed agent can still reach local services like Docker, Ollama, databases, or MCP servers. This is usually desirable for AI agents but worth knowing.
 - **GlobalSettings templates are inherited.** Sandboxie's global compatibility templates (Edge_Fix, OfficeLicensing, etc.) are inherited by all boxes. These operate on RPC/COM ports, not filesystem paths, and do not weaken filesystem isolation — but we cannot strip them per-box.
-- **SandMan is killed on every run.** If you use SandMan.exe for other sandboxes, SunBoxed will close it. Set `SUNBOXED_KEEP_GUI=1` is not yet implemented — for now, restart SandMan manually if needed.
+- **SandMan is killed on every run.** If you use SandMan.exe for other sandboxes, SunBoxed will close it.
 - **Snapshots exclude `.git`.** Unpushed local commits survive `snap restore` (they're in `.git` which is untouched), but the working tree is rolled back.
 
 ## Running Tests
@@ -155,7 +176,7 @@ Stored at `..\.sbox\<dirname>\__snapshots__\<name>\`. Excludes `.git`, `node_mod
 npm test
 ```
 
-40 integration tests across 5 suites: filesystem isolation, network blocking, overlay persistence, per-directory boxes (hash-based naming), snapshots.
+6 test suites: filesystem isolation, network blocking, overlay persistence, per-directory boxes, snapshots, TCP relay.
 
 ## Sandboxie Reference
 

@@ -87,11 +87,9 @@ if (rawArgs[0] === "/snap") {
 const flags = { tty: false, show: false, netBlock: false, readonly: false, noPty: false, allow: [], deny: [] };
 let cmdArgs = [];
 let i = 0;
-let separatorFound = false;
-
 while (i < rawArgs.length) {
   const a = rawArgs[i];
-  if (a === "--") { i++; separatorFound = true; break; }
+  if (a === "--") { i++; break; }
   if (a.toLowerCase() === "/tty") { flags.tty = true; i++; continue; }
   if (a.toLowerCase() === "/show") { flags.show = true; i++; continue; }
   if (a.toLowerCase() === "/net-block") { flags.netBlock = true; i++; continue; }
