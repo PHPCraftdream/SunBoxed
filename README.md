@@ -176,7 +176,7 @@ Stored at `..\.sbox\<dirname>\__snapshots__\<name>\`. Excludes `.git`, `node_mod
 npm test
 ```
 
-6 test suites: filesystem isolation, network blocking, overlay persistence, per-directory boxes, snapshots, TCP relay.
+51 assertions across 6 suites: filesystem isolation (CWD, parent, readonly, allow, deny, absolute paths, user profile), network blocking, overlay persistence, per-directory boxes, snapshots, TCP relay (auth, output, setRawMode, exit codes, sandbox marker).
 
 ## Sandboxie Reference
 

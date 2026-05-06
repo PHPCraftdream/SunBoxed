@@ -116,7 +116,53 @@ When calling Sandboxie CLI from Git Bash / MSYS2, arguments starting with `/` ge
 | calc.exe | No | UWP app, not supported by Sandboxie |
 | Windows Terminal (wt.exe) | Untested | Should work similarly to WezTerm |
 
-WezTerm requires `OpenIpcPath=*` and `OpenPipePath=*` in the box config to launch inside sandbox.
+WezTerm requires `OpenIpcPath=*` in the box config to launch inside sandbox.
+
+## CRITICAL: OpenPipePath=* breaks filesystem isolation
+
+**`OpenPipePath=*` disables filesystem sandboxing.** Despite its name suggesting only pipe paths, the `*` wildcard matches filesystem paths too. With `OpenPipePath=*`, writes to parent directories, temp, user profile — all go to real disk instead of the overlay.
+
+**`OpenIpcPath=*` is safe.** It opens IPC paths (named pipes, events, semaphores) without affecting filesystem isolation. This is sufficient for relay TCP, WezTerm, and all IPC needs.
+
+| Setting | FS Isolation | IPC | Use |
+|---------|-------------|-----|-----|
+| `OpenIpcPath=*` | Intact | Open | Required for relay/WezTerm |
+| `OpenPipePath=*` | **BROKEN** | Open | NEVER use |
+| Neither | Intact | Restricted | Some apps may fail |
+
+## TCP Relay Solution
+
+The WezTerm-in-sandbox approach works but requires a separate terminal window. The TCP relay solves this:
+
+```
+User's terminal
+    ↓ raw stdin/stdout
+sunboxed.js (runRelay) — TCP server on 127.0.0.1:random
+    ↓ JSON-lines protocol, 128-char auth token
+sunboxed-host.js — INSIDE sandbox, creates ConPTY via node-pty
+    ↓ direct .exe spawn (or cmd.exe /c for .cmd/.bat)
+target command — setRawMode works, full TUI support
+```
+
+**Key findings:**
+- node-pty ConPTY works inside sandbox (CreatePseudoConsole not blocked by SbieDrv)
+- TCP localhost from sandbox works even with `Template=BlockPorts` (blocks SMB, not loopback)
+- Direct .exe spawn in PTY provides transparent signal handling (no cmd.exe layer)
+- cmd.exe /c wrapper is only needed for .cmd/.bat scripts (PATH resolution)
+
+**Protocol:** JSON-lines over TCP. Message types:
+- `auth` — host→client, 128-char token verification
+- `ready` — host→client, PTY spawned
+- `o` — host→client, base64-encoded terminal output
+- `i` — client→host, base64-encoded terminal input
+- `r` — client→host, resize {cols, rows}
+- `x` — host→client, exit {code}
+
+## SbieIni.exe config persistence
+
+`SbieIni.exe set` writes to **SbieSvc memory**, not directly to Sandboxie.ini. The ini file may not reflect current runtime config. `SbieIni.exe query` reads from SbieSvc memory. `Start.exe /reload` tells SbieSvc to re-read from ini — but if config was only in memory, /reload may reset it.
+
+Boxes are created dynamically on first `SbieIni.exe set`. No manual box creation needed.
 
 ## Architecture Decision: Hybrid BAT + JS
 
