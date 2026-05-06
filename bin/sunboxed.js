@@ -163,7 +163,31 @@ function removeBoxConfig() {
     "OpenPipePath", "BlockNetworkConnect",
   ];
   for (const s of settings) sbiDel(s);
-  startExe("/reload");
+}
+
+function detectTermSize() {
+  // 1. Native Node.js (works when stdout is a real TTY)
+  if (process.stdout.columns && process.stdout.rows) {
+    return [process.stdout.columns, process.stdout.rows];
+  }
+  // 2. Environment variables (set by some shells)
+  if (process.env.COLUMNS && process.env.LINES) {
+    return [parseInt(process.env.COLUMNS), parseInt(process.env.LINES)];
+  }
+  // 3. stty (works in MSYS2/Git Bash)
+  try {
+    const out = execSync("stty size", { encoding: "utf-8", stdio: ["pipe","pipe","pipe"], windowsHide: true, timeout: 2000 }).trim();
+    const [r, c] = out.split(/\s+/).map(Number);
+    if (c > 0 && r > 0) return [c, r];
+  } catch (_) {}
+  // 4. PowerShell (works in cmd.exe and most Windows terminals)
+  try {
+    const out = execSync("powershell -NoProfile -Command \"[Console]::WindowWidth,[Console]::WindowHeight -join ','\"",
+      { encoding: "utf-8", stdio: ["pipe","pipe","pipe"], windowsHide: true, timeout: 3000 }).trim();
+    const [c, r] = out.split(",").map(Number);
+    if (c > 0 && r > 0) return [c, r];
+  } catch (_) {}
+  return [80, 24];
 }
 
 function resolveCommand(args) {
@@ -196,8 +220,7 @@ function runRelay(args) {
   const net = require("net");
   const hostScript = path.join(__dirname, "sunboxed-host.js");
   const node = process.execPath;
-  const cols = process.stdout.columns || 80;
-  const rows = process.stdout.rows || 24;
+  const [cols, rows] = detectTermSize();
   const token = crypto.randomBytes(64).toString("hex");
 
   // Prevent Ctrl+C from killing the relay — bytes are forwarded to host PTY
