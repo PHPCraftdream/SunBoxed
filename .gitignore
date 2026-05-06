@@ -1,5 +1,11 @@
+# Dependencies
+node_modules/
+package-lock.json
+
 # Test temp
 tests/.tmp/
+tests/_debug_*
+tests/_exp_*
 
 # Sandbox overlays
 .sbox/
@@ -12,6 +18,9 @@ tests/.tmp/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Temp sockets/files
+gui-sock-*
 
 # Editors
 .idea/

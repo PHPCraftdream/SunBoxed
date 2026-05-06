@@ -1,10 +1,27 @@
 #!/usr/bin/env node
+/**
+ * cc75 — Claude Code 2.1.75 in a sandboxed terminal.
+ *
+ * Usage:
+ *   cc75                    Sandboxed Claude Code (WezTerm + Sandboxie)
+ *   cc75 --no-sandbox       Run without sandbox in current terminal
+ */
 const { spawnSync } = require("child_process");
 const path = require("path");
 
-const script = path.resolve(__dirname, "..", "scripts", "cc75.cmd");
-const result = spawnSync("cmd.exe", ["/c", script, ...process.argv.slice(2)], {
+const args = process.argv.slice(2);
+
+if (args[0] === "--no-sandbox") {
+  const r = spawnSync("npx", ["--yes", "@anthropic-ai/claude-code@2.1.75", "--dangerously-skip-permissions", ...args.slice(1)], {
+    stdio: "inherit",
+    shell: true,
+  });
+  process.exit(r.status || 0);
+}
+
+// Launch via sunboxed /tty
+const sunboxed = path.resolve(__dirname, "sunboxed.js");
+const r = spawnSync("node", [sunboxed, "npx", "--yes", "@anthropic-ai/claude-code@2.1.75", "--dangerously-skip-permissions", ...args], {
   stdio: "inherit",
-  cwd: process.cwd(),
 });
-process.exit(result.status || 0);
+process.exit(r.status || 0);

@@ -3,18 +3,19 @@
  */
 const path = require("path");
 const fs = require("fs");
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
 const h = require("./helpers");
 
 const WS = h.workspace("ws_snap");
 const SNAPDIR = path.resolve(WS, "..", ".sbox", "ws_snap", "__snapshots__");
 
 function sunboxedSnap(args) {
-  const cmd = `"${h.SBOX}" /snap ${args}`;
+  const snapArgs = [h.SBOX, "/snap", ...args.split(/\s+/).filter(Boolean)];
   try {
-    return execSync(cmd, { cwd: WS, timeout: 15000, ...h.EXEC_OPTS }).toString().trim();
+    const r = spawnSync(process.execPath, snapArgs, { cwd: WS, timeout: 15000, windowsHide: true, stdio: "pipe" });
+    return (r.stdout || "").toString().trim();
   } catch (e) {
-    return (e.stdout || "").toString().trim();
+    return "";
   }
 }
 
