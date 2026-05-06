@@ -112,11 +112,16 @@ killGui();
 harden();
 configurePaths();
 
-if (flags.tty) {
+const mode = flags.tty ? "tty" : flags.show ? "show" : (hasPty && !flags.noPty) ? "relay" : "hidden";
+if (process.env.SUNBOXED_DEBUG) {
+  try { fs.appendFileSync(process.env.SUNBOXED_DEBUG, `mode=${mode} hasPty=${hasPty} isTTY=${process.stdin.isTTY} box=${box} cwd=${cwd}\n`); } catch(_) {}
+}
+
+if (mode === "tty") {
   runTty(cmdArgs);
-} else if (flags.show) {
+} else if (mode === "show") {
   runShow(cmdArgs);
-} else if (hasPty && !flags.noPty && process.stdin.isTTY) {
+} else if (mode === "relay") {
   runRelay(cmdArgs);
 } else {
   runHidden(cmdArgs);
@@ -131,12 +136,18 @@ function harden() {
   sbie("set", box, "BlockNetworkFiles", "y");
   sbie("set", box, "Template", "BlockPorts");
   sbie("append", box, "OpenIpcPath", "*");
-  sbie("append", box, "OpenPipePath", "*");
+
+  if (process.env.SUNBOXED_DEBUG) {
+    // Verify config was written
+    const q = sbiQuery("Enabled");
+    try { fs.appendFileSync(process.env.SUNBOXED_DEBUG, `harden: box=${box} Enabled=${JSON.stringify(q)} SBIE_INI=${SBIE_INI}\n`); } catch(_) {}
+  }
 }
 
 function configurePaths() {
   sbiDel("OpenFilePath");
   sbiDel("ClosedFilePath");
+  sbiDel("OpenPipePath");
   sbiDel("BlockNetworkConnect");
 
   if (!flags.readonly) {
@@ -200,9 +211,10 @@ function runRelay(args) {
   function cleanup(code) {
     if (cleaned) return;
     cleaned = true;
-    // Restore terminal: exit alternate screen, show cursor, reset attributes
-    try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m"); } catch (_) {}
-    try { process.stdin.setRawMode(false); } catch (_) {}
+    if (process.stdin.isTTY) {
+      try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m"); } catch (_) {}
+      try { process.stdin.setRawMode(false); } catch (_) {}
+    }
     process.stdin.pause();
     startExe("/box:" + box, "/silent", "/terminate");
     process.exit(code || 0);
@@ -250,14 +262,17 @@ function runRelay(args) {
         } else if (msg.t === "x") {
           cleanup(msg.c || 0);
         } else if (msg.t === "ready") {
-          // Host PTY is ready — enter raw mode and start relay
-          process.stdin.setRawMode(true);
+          // Host PTY is ready — start relay
+          const isTTY = process.stdin.isTTY;
+          if (isTTY) {
+            process.stdin.setRawMode(true);
+          }
           process.stdin.resume();
 
           let ctrlCTimes = [];
           process.stdin.on("data", data => {
-            // Triple Ctrl+C within 2s = force exit relay
-            if (data.length === 1 && data[0] === 0x03) {
+            // Triple Ctrl+C within 2s = force exit relay (TTY only)
+            if (isTTY && data.length === 1 && data[0] === 0x03) {
               const now = Date.now();
               ctrlCTimes.push(now);
               ctrlCTimes = ctrlCTimes.filter(t => now - t < 2000);
