@@ -1,0 +1,41 @@
+{
+  "name": "sunboxed",
+  "version": "0.1.0",
+  "description": "Run CLI commands in Sandboxie containers with filesystem isolation. Safe --dangerously-skip-permissions for AI coding agents.",
+  "license": "GPL-3.0",
+  "bin": {
+    "sunboxed": "bin/sunboxed.js",
+    "cc75": "bin/cc75.js"
+  },
+  "scripts": {
+    "test": "node tests/run-all.js"
+  },
+  "keywords": [
+    "sandboxie",
+    "sandbox",
+    "isolation",
+    "cli",
+    "security",
+    "ai-agent",
+    "claude-code",
+    "filesystem"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PHPCraftdream/SunBoxed.git"
+  },
+  "homepage": "https://github.com/PHPCraftdream/SunBoxed",
+  "bugs": {
+    "url": "https://github.com/PHPCraftdream/SunBoxed/issues"
+  },
+  "os": ["win32"],
+  "files": [
+    "bin/",
+    "scripts/sunboxed.cmd",
+    "scripts/cc75.cmd",
+    "scripts/install-user.cmd",
+    "scripts/install-system.cmd",
+    "README.md",
+    "LICENSE"
+  ]
+}
