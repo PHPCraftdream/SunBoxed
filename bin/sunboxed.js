@@ -231,7 +231,10 @@ function runRelay(args) {
     if (cleaned) return;
     cleaned = true;
     if (process.stdin.isTTY) {
-      try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m\x1b[2J\x1b[H"); } catch (_) {}
+      // Restore terminal: exit alt screen, show cursor, reset attrs
+      // Only clear screen on clean exit — on error leave output visible
+      const clear = code === 0 ? "\x1b[2J\x1b[H" : "\n";
+      try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m" + clear); } catch (_) {}
       try { process.stdin.setRawMode(false); } catch (_) {}
     }
     process.stdin.pause();
