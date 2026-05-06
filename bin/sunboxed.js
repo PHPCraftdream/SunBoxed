@@ -201,7 +201,7 @@ function runRelay(args) {
     if (cleaned) return;
     cleaned = true;
     if (process.stdin.isTTY) {
-      try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m"); } catch (_) {}
+      try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m\x1b[2J\x1b[H"); } catch (_) {}
       try { process.stdin.setRawMode(false); } catch (_) {}
     }
     process.stdin.pause();
