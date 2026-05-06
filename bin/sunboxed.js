@@ -195,10 +195,15 @@ function runRelay(args) {
   const rows = process.stdout.rows || 24;
   const token = crypto.randomBytes(64).toString("hex");
 
+  // Prevent Ctrl+C from killing the relay — bytes are forwarded to host PTY
+  process.on("SIGINT", () => {});
+
   let cleaned = false;
   function cleanup(code) {
     if (cleaned) return;
     cleaned = true;
+    // Restore terminal: exit alternate screen, show cursor, reset attributes
+    try { process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m"); } catch (_) {}
     try { process.stdin.setRawMode(false); } catch (_) {}
     process.stdin.pause();
     startExe("/box:" + box, "/silent", "/terminate");
