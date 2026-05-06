@@ -20,5 +20,5 @@ jobs:
           files: |
             scripts/sunboxed.cmd
             scripts/cc75.cmd
-            scripts/install-user.cmd
-            scripts/install-system.cmd
+            scripts/sunboxed-install-user.cmd
+            scripts/sunboxed-install-system.cmd

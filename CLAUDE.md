@@ -12,8 +12,8 @@ SunBoxed — a CMD wrapper that runs CLI commands inside Sandboxie-Plus containe
 scripts/
 ├── sunboxed.cmd          — main tool (flags, per-dir boxes, hardening)
 ├── cc75.cmd              — Claude Code 2.1.75 shortcut
-├── install-user.cmd      — add scripts/ to user PATH
-└── install-system.cmd    — add scripts/ to system PATH (admin)
+├── sunboxed-install-user.cmd      — add scripts/ to user PATH
+└── sunboxed-install-system.cmd    — add scripts/ to system PATH (admin)
 tests/
 ├── run-all.js            — test runner (npm test)
 ├── helpers.js            — shared test utilities

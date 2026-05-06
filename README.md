@@ -58,10 +58,10 @@ git clone https://github.com/PHPCraftdream/SunBoxed.git
 cd SunBoxed
 
 :: Add to current user's PATH
-scripts\install-user.cmd
+scripts\sunboxed-install-user.cmd
 
 :: Or system-wide (requires admin)
-scripts\install-system.cmd
+scripts\sunboxed-install-system.cmd
 ```
 
 ## Usage

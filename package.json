@@ -1,6 +1,6 @@
 {
   "name": "sunboxed",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run CLI commands in Sandboxie containers with filesystem isolation. Safe --dangerously-skip-permissions for AI coding agents.",
   "license": "GPL-3.0",
   "bin": {
@@ -33,8 +33,8 @@
     "bin/",
     "scripts/sunboxed.cmd",
     "scripts/cc75.cmd",
-    "scripts/install-user.cmd",
-    "scripts/install-system.cmd",
+    "scripts/sunboxed-install-user.cmd",
+    "scripts/sunboxed-install-system.cmd",
     "README.md",
     "LICENSE"
   ]
