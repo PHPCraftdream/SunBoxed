@@ -62,9 +62,6 @@ function startExeRun(...args) {
   return r;
 }
 
-function killGui() {
-  try { execSync("taskkill /f /im SandMan.exe", { stdio: "pipe", windowsHide: true }); } catch (_) {}
-}
 
 // ---- Parse args ----
 const rawArgs = process.argv.slice(2);
@@ -108,7 +105,6 @@ if (cmdArgs.length === 0) {
 }
 
 // ---- Configure sandbox ----
-killGui();
 harden();
 configurePaths();
 
@@ -160,6 +156,16 @@ function configurePaths() {
   startExe("/reload");
 }
 
+function removeBoxConfig() {
+  const settings = [
+    "Enabled", "FileRootPath", "ConfigLevel", "BlockNetworkFiles",
+    "Template", "OpenIpcPath", "OpenFilePath", "ClosedFilePath",
+    "OpenPipePath", "BlockNetworkConnect",
+  ];
+  for (const s of settings) sbiDel(s);
+  startExe("/reload");
+}
+
 function resolveCommand(args) {
   const cmd = args[0];
   try {
@@ -174,6 +180,7 @@ function runHidden(args) {
   args = resolveCommand(args);
   const r = startExeRun("/box:" + box, "/hide_window", "/wait", ...args);
   startExe("/box:" + box, "/silent", "/terminate");
+  removeBoxConfig();
   process.exit(r.status || 0);
 }
 
@@ -206,6 +213,7 @@ function runRelay(args) {
     }
     process.stdin.pause();
     startExe("/box:" + box, "/silent", "/terminate");
+    removeBoxConfig();
     process.exit(code || 0);
   }
 
@@ -369,7 +377,6 @@ function findTerminal() {
 }
 
 function doReset() {
-  killGui();
   sbie("set", box, "Enabled", "y");
   sbie("set", box, "FileRootPath", overlay);
   startExe("/reload");

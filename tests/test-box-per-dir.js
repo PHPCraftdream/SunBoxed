@@ -1,8 +1,10 @@
 /**
  * Per-directory box tests: unique boxes, cross-dir isolation, hardened config.
+ * Config is verified from INSIDE the sandbox (box is cleaned up after each run).
  */
 const path = require("path");
 const fs = require("fs");
+const { execSync } = require("child_process");
 const h = require("./helpers");
 
 const WS1 = h.workspace("ws_box1");
@@ -23,11 +25,7 @@ function testPerDirBoxNames() {
 
   const box1 = h.boxName(WS1);
   const box2 = h.boxName(WS2);
-  const cfg1 = h.queryBox(box1, "FileRootPath");
-  const cfg2 = h.queryBox(box2, "FileRootPath");
   h.assert(box1 !== box2, "Different dirs get different box names");
-  h.assert(cfg1.includes("ws_box1"), "Box 1 correct FileRootPath");
-  h.assert(cfg2.includes("ws_box2"), "Box 2 correct FileRootPath");
   h.assert(fs.existsSync(path.join(WS1, "ok.txt")), "Workspace 1 file on disk");
   h.assert(fs.existsSync(path.join(WS2, "ok.txt")), "Workspace 2 file on disk");
 }
@@ -46,16 +44,39 @@ function testCrossDirIsolation() {
 }
 
 function testHardenedConfig() {
-  console.log("\n[BOX 3] Hardened box config");
+  console.log("\n[BOX 3] Hardened box config (verified from inside sandbox)");
   h.setupWorkspace(WS1);
+  // Inner script queries its own box config via SbieIni.exe
+  const sbiIni = "C:\\\\Program Files\\\\Sandboxie-Plus\\\\SbieIni.exe";
   h.writeInnerScript(WS1, "t.js", `
-    require("fs").writeFileSync(require("path").join(process.cwd(), "ok.txt"), "ok");
+    const { execSync } = require("child_process");
+    const crypto = require("crypto");
+    const cwd = process.cwd();
+    const hash = crypto.createHash("sha256").update(cwd).digest("hex").substring(0, 16).toUpperCase();
+    const box = "_SB_" + hash;
+    function q(s) {
+      try { return execSync('"${sbiIni}" query ' + box + ' ' + s, {shell:"cmd.exe",encoding:"utf-8",windowsHide:true,stdio:["pipe","pipe","pipe"]}).trim(); }
+      catch(_) { return ""; }
+    }
+    const result = {
+      configLevel: q("ConfigLevel"),
+      template: q("Template"),
+      blockNetFiles: q("BlockNetworkFiles"),
+    };
+    require("fs").writeFileSync(require("path").join(cwd, "config.json"), JSON.stringify(result));
   `);
   h.sbox("", "t.js", WS1);
-  const box1 = h.boxName(WS1);
-  h.assert(h.queryBox(box1, "ConfigLevel") === "99", "ConfigLevel=99");
-  h.assert(h.queryBox(box1, "Template").split("\r\n")[0] === "BlockPorts", "Only BlockPorts template");
-  h.assert(h.queryBox(box1, "BlockNetworkFiles") === "y", "BlockNetworkFiles=y");
+  const f = path.join(WS1, "config.json");
+  if (fs.existsSync(f)) {
+    const cfg = JSON.parse(fs.readFileSync(f, "utf-8"));
+    h.assert(cfg.configLevel === "99", "ConfigLevel=99");
+    h.assert(cfg.template.split("\r\n")[0] === "BlockPorts", "Only BlockPorts template");
+    h.assert(cfg.blockNetFiles === "y", "BlockNetworkFiles=y");
+  } else {
+    h.assert(false, "ConfigLevel=99 (config.json missing)");
+    h.assert(false, "Only BlockPorts template");
+    h.assert(false, "BlockNetworkFiles=y");
+  }
 }
 
 try { testPerDirBoxNames(); testCrossDirIsolation(); testHardenedConfig(); }
