@@ -4,8 +4,7 @@
   "description": "Run CLI commands in Sandboxie containers with filesystem isolation. Safe --dangerously-skip-permissions for AI coding agents.",
   "license": "GPL-3.0",
   "bin": {
-    "sunboxed": "bin/sunboxed.js",
-    "cc75": "bin/cc75.js"
+    "sunboxed": "bin/sunboxed.js"
   },
   "scripts": {
     "test": "node tests/run-all.js"
