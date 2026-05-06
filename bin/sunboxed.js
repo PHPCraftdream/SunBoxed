@@ -254,7 +254,18 @@ function runRelay(args) {
           process.stdin.setRawMode(true);
           process.stdin.resume();
 
+          let ctrlCTimes = [];
           process.stdin.on("data", data => {
+            // Triple Ctrl+C within 2s = force exit relay
+            if (data.length === 1 && data[0] === 0x03) {
+              const now = Date.now();
+              ctrlCTimes.push(now);
+              ctrlCTimes = ctrlCTimes.filter(t => now - t < 2000);
+              if (ctrlCTimes.length >= 3) {
+                cleanup(130);
+                return;
+              }
+            }
             sendMsg(socket, { t: "i", d: data.toString("base64") });
           });
 

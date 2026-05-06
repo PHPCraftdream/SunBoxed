@@ -35,10 +35,25 @@ if (!port || !token || cmdParts.length === 0) {
   process.exit(1);
 }
 
-// Write command to temp .cmd file to avoid cmd.exe /c quoting hell
-const tempCmd = path.join(os.tmpdir(), `sunboxed-${process.pid}.cmd`);
-const cmdLine = cmdParts.map(p => p.includes(' ') ? `"${p}"` : p).join(' ');
-fs.writeFileSync(tempCmd, `@${cmdLine}\r\n`);
+// ---- Spawn strategy ----
+// Direct spawn for .exe/.com — no cmd.exe layer, transparent signal handling.
+// cmd.exe /c via temp .cmd file for .cmd/.bat/unresolved — needed for PATH and script support.
+let spawnFile, spawnArgs;
+let tempCmd = null;
+const ext = path.extname(cmdParts[0]).toLowerCase();
+
+if (ext === '.exe' || ext === '.com') {
+  // Direct spawn — fully transparent, no cmd.exe artifacts
+  spawnFile = cmdParts[0];
+  spawnArgs = cmdParts.slice(1);
+} else {
+  // Need cmd.exe for .cmd/.bat scripts and PATH resolution
+  tempCmd = path.join(os.tmpdir(), `sunboxed-${process.pid}.cmd`);
+  const cmdLine = cmdParts.map(p => p.includes(' ') ? `"${p}"` : p).join(' ');
+  fs.writeFileSync(tempCmd, `@${cmdLine}\r\n`);
+  spawnFile = 'cmd.exe';
+  spawnArgs = ['/c', tempCmd];
+}
 
 // ---- Protocol helpers ----
 function send(socket, msg) {
@@ -58,15 +73,14 @@ function parseMessages(buf, callback) {
 }
 
 function cleanup() {
-  try { fs.unlinkSync(tempCmd); } catch (_) {}
+  if (tempCmd) try { fs.unlinkSync(tempCmd); } catch (_) {}
 }
 
 // ---- Connect to client and spawn PTY ----
 const socket = net.connect(port, '127.0.0.1', () => {
-  // Auth handshake: send token first
   send(socket, { t: 'auth', token });
 
-  const term = pty.spawn('cmd.exe', ['/c', tempCmd], {
+  const term = pty.spawn(spawnFile, spawnArgs, {
     name: 'xterm-256color',
     cols,
     rows,
