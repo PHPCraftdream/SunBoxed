@@ -1012,10 +1012,12 @@ GLOBAL FLAGS:
   --detailed-help              long help with examples and agent-oriented notes
 
 VARIANTS:
-  sundocked      this CLI — bare Docker wrapper, no DNS magic
-  sundohed       same CLI + in-container DoH proxy (bypasses kernel-level
-                 DNS hijacks like Cisco Secure Client, Zscaler)
-  sundohed-cc    sundohed with the "cc" subcommand auto-injected
+  sundocked       this CLI — bare Docker wrapper, no DNS magic
+  sundocked-cc    sundocked with the "cc" subcommand auto-injected
+                  (one-shot Claude Code launcher, no DoH proxy)
+  sundohed        same CLI + in-container DoH proxy (bypasses kernel-level
+                  DNS hijacks like Cisco Secure Client, Zscaler)
+  sundohed-cc     sundohed with the "cc" subcommand auto-injected
 
 For full help: sundocked --detailed-help`);
 }
@@ -1043,28 +1045,31 @@ WHY
 4. Reproducible: one config.ktav file → same environment for everyone
 
 ═══════════════════════════════════════════════════════════════════════════════
-VARIANTS (sundocked / sundohed / sundohed-cc)
+VARIANTS (sundocked / sundocked-cc / sundohed / sundohed-cc)
 ═══════════════════════════════════════════════════════════════════════════════
 
-Three entry points, same engine:
+Four entry points, same engine:
 
-  sundocked      Bare Docker wrapper — what this help describes. No DNS
-                 modifications inside the container. Use this when the
-                 host's DNS works fine.
+  sundocked       Bare Docker wrapper — what this help describes. No DNS
+                  modifications inside the container. Use this when the
+                  host's DNS works fine.
 
-  sundohed       sundocked + a tiny Go DoH proxy auto-installed in every
-                 container it creates. /etc/resolv.conf is rewritten to
-                 127.0.0.1; queries leave the container as HTTPS to
-                 public DoH servers. Use this on networks where UDP:53
-                 is hijacked at the kernel level (Cisco Secure Client
-                 / acsock64.sys, Zscaler, Umbrella, etc.) — symptoms:
-                 npm/pip/apt resolve to 127.x.x.x and refuse connections.
+  sundocked-cc    sundocked with "cc" prepended — one-shot launcher for
+                  Claude Code. "sundocked-cc --image node:22-slim" ==
+                  "sundocked cc --image node:22-slim". No DoH proxy.
 
-  sundohed-cc    sundohed with "cc" prepended — one-shot launcher for
-                 Claude Code. "sundohed-cc --image node:22-slim" ==
-                 "sundohed cc --image node:22-slim".
+  sundohed        sundocked + a tiny Go DoH proxy auto-installed in every
+                  container it creates. /etc/resolv.conf is rewritten to
+                  127.0.0.1; queries leave the container as HTTPS to
+                  public DoH servers. Use this on networks where UDP:53
+                  is hijacked at the kernel level (Cisco Secure Client
+                  / acsock64.sys, Zscaler, Umbrella, etc.) — symptoms:
+                  npm/pip/apt resolve to 127.x.x.x and refuse connections.
 
-All three accept the same subcommands and flags below. Whichever entry
+  sundohed-cc     sundohed + "cc" prepended — same as sundocked-cc but
+                  with the DoH proxy.
+
+All four accept the same subcommands and flags below. Whichever entry
 point creates the container "wins": once a container exists with a DoH
 proxy, plain "sundocked exec ..." against the same dir will use it (the
 proxy is already running inside). To start clean: sundocked reset.
@@ -1271,11 +1276,14 @@ CLAUDE CODE WORKFLOW
   # Claude Code now runs inside the container with /work as CWD; it can ONLY
   # write inside the project — host files outside the dir are unreachable.
 
-  # Shorter:
+  # Shorter (no DoH proxy):
+  sundocked-cc --image node:22-slim        # == "sundocked cc --image ..."
+
+  # Or with the DoH proxy (corporate VPN networks):
   sundohed-cc --image node:22-slim         # == "sundohed cc --image ..."
 
   # Resume a previous Claude session:
-  sundocked cc --resume                    # or: sundohed-cc --resume
+  sundocked cc --resume                    # or: sundocked-cc --resume / sundohed-cc --resume
 
   # Use "node:22-slim" or "node:22-alpine" so npm is present;
   # "node:22-bookworm" if you need glibc-based native modules.
@@ -1398,8 +1406,9 @@ SEE ALSO
   sundocked status --json         # current container state
   sundocked list --json           # all sundocked containers on this host
 
+  sundocked-cc                    # sundocked cc (one-shot Claude Code launcher)
   sundohed                        # this CLI + in-container DoH proxy
-  sundohed-cc                     # sundohed cc (one-shot Claude Code launcher)
+  sundohed-cc                     # sundohed cc (Claude Code + DoH proxy)
 
 When a corporate VPN/endpoint-security driver hijacks UDP:53 (symptoms:
 "ECONNREFUSED 127.x.x.x" on every install or API call), the sundohed

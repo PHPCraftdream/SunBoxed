@@ -1,180 +1,154 @@
-# SunBoxed — Sandboxie CLI Isolation Proxy
+# sundocked / sundohed
 
-Run any CLI command in a Sandboxie container where the app can **only write to the current directory**. Everything else (system files, AppData, registry, temp) goes to an overlay that persists between runs.
+Per-directory Docker isolation for AI coding agents and humans. One long-lived container per `(directory, image)` pair; CWD bind-mounted as `/work`, persistent home as `/root`. Built so that running `claude --dangerously-skip-permissions` is safe — the agent can only write inside the project directory.
 
-Built for running AI coding agents (Claude Code, Codex, etc.) with `--dangerously-skip-permissions` safely.
+Four entry points, same engine:
 
-### Why this saves tokens
+| Command | What it does |
+|---|---|
+| `sundocked` | Bare Docker wrapper. No DNS modifications inside the container. |
+| `sundocked-cc` | `sundocked cc` with the `cc` subcommand auto-injected. One-shot Claude Code launcher. |
+| `sundohed` | `sundocked` + an in-container DoH proxy auto-installed on every container start. Bypasses kernel-level UDP:53 hijacks by corporate VPN endpoint security drivers (Cisco Secure Client, Zscaler, Umbrella, etc.). |
+| `sundohed-cc` | `sundohed cc` with the `cc` subcommand auto-injected. |
 
-AI coding agents like Claude Code spend tokens on permission requests: every file write, every shell command triggers a confirmation round-trip. With `--dangerously-skip-permissions` the agent works autonomously — but that's risky on a bare system.
+All four accept the same subcommands and flags.
 
-SunBoxed makes it safe: the agent runs with full permissions **inside a sandbox**, so:
-- **No permission prompts** — the agent doesn't waste tokens asking "can I write this file?"
-- **No MCP/tool overhead** — no need to load safety-wrapper tools into the agent's context window
-- **Faster iterations** — the agent acts immediately instead of waiting for approval
-- **Safe to experiment** — worst case, `sunboxed /snap restore` rolls back CWD to a saved state
+## Why
 
-### Interactive TUI support
+AI coding agents like Claude Code spend tokens on permission requests. With `--dangerously-skip-permissions` the agent works autonomously — but that's risky on a bare system. Running inside a Docker container with only the project directory bind-mounted means:
 
-SunBoxed includes a TCP relay that creates a ConPTY inside the sandbox, allowing **full interactive TUI apps** (Claude Code, vim, htop) to work in your current terminal. This solves the fundamental problem where Sandboxie's kernel driver blocks `setRawMode`/`SetConsoleMode` for sandboxed processes.
+- **No permission prompts** — agent doesn't waste tokens asking "can I write this file?"
+- **No MCP/tool overhead** — no safety-wrapper tools loaded into context
+- **Faster iterations** — agent acts immediately
+- **Safe to experiment** — `sundocked reset` wipes the container, project files survive
 
-When you run `sunboxed claude` in a terminal, it automatically:
-1. Starts a PTY host inside the sandbox (via node-pty)
-2. Connects it to your terminal via a localhost TCP relay
-3. Authenticates with a per-session 128-char token
-4. Forwards all input/output transparently (including Ctrl keys, resize, alternate screen)
+## Quick start
 
-### Security model
+```bash
+cd /path/to/your/project
+sundocked --image node:22-slim     # creates a container, drops you in a shell
+npm install && npm test            # ...inside the container, /work == your CWD
 
-SunBoxed uses Sandboxie-Plus for isolation, which is designed to protect against **accidental damage** — a coding agent doing `rm -rf /`, writing to wrong directories, corrupting system files, etc.
+# For one-shot non-TTY commands (agents, scripts):
+sundocked --image node:22-slim exec npm test
 
-**This is NOT a security boundary against targeted attacks.** Sandboxie is not designed to contain malware actively trying to escape the sandbox. Do not use SunBoxed as protection against untrusted/hostile code — use a VM or container for that.
+# Claude Code, one-liner:
+sundocked-cc --image node:22-slim    # or sundohed-cc on hijacked DNS networks
+```
 
-The TCP relay binds to `127.0.0.1` only (not accessible from network) and requires a cryptographically random auth token generated per session.
+If your network filters DNS at the kernel level (corporate VPN — symptoms: `npm install` fails with `ECONNREFUSED 127.x.x.x`), use `sundohed` / `sundohed-cc` instead of `sundocked`. They're identical except sundohed installs a DoH proxy inside the container that resolves everything via HTTPS, transparently.
 
-## Requirements
+## Architecture
 
-- Windows 10/11
-- [Sandboxie-Plus](https://sandboxie-plus.com/) v1.x installed at `C:\Program Files\Sandboxie-Plus\`
-- Node.js 18+
-- `node-pty` (installed automatically as a dependency; required for interactive/TUI mode)
+```
+host                                              container
+─────────────────                                 ────────────────────
+sundohed-cc.js  ─── argv prepended "cc" ───►  sundohed.js
+                                                ↓ require
+                                              sundocked.js
+                                                ↓ docker run / docker exec
+                                                ↓ afterContainerStart hook
+                                              sundohed-proxy.js
+                                                ↓ docker cp init.sh + binary
+                                                ↓ docker exec init.sh
+                                                                            ┌─────────────────┐
+                                                                            │ /opt/sundocked/ │
+                                                                            │   init.sh       │
+                                                                            │   sundocked-dns │ ◄── 6 MB Go binary
+                                                                            └─────────────────┘
+                                                                                     ↓
+                                                                            UDP/TCP :53 (127.0.0.1)
+                                                                                     ↓
+                                                                            HTTPS :443 (DoH)
+                                                                                     ↓
+                                                                            Cloudflare / Google /
+                                                                            Quad9 / AdGuard /
+                                                                            Mullvad / AliDNS
+                                                                            (11 hostname-based
+                                                                             upstreams, ranked by
+                                                                             availability stats)
+```
+
+The DoH proxy uses **hostname-based** URLs (`https://cloudflare-dns.com/dns-query`, etc.) with hardcoded IPs in a custom `net.Dialer` — TLS SNI matches the real provider hostname (which corporate MITM stacks usually let through), but no DNS lookup is needed, avoiding the chicken-and-egg of "we ARE the DNS resolver". Mozilla's CA bundle is embedded in the binary, so it works on minimal images (slim/distroless/alpine) that ship without `ca-certificates`.
+
+## Common commands
+
+```bash
+sundocked --image NAME                    # create container, drop into shell
+sundocked --image NAME exec CMD ...       # one-shot non-TTY command
+sundocked --image NAME cc                 # launch Claude Code
+sundocked install pkg1 pkg2               # apt/apk/dnf/yum/pacman/zypper auto-detect
+sundocked status [--json]                 # container state
+sundocked start | stop | restart          # lifecycle
+sundocked reset                           # destroy + recreate from base image
+sundocked list [--json]                   # all sundocked containers on this host
+sundocked recipes                         # built-in stack presets
+sundocked recipe nginx-php                # apply a preset
+sundocked service add NAME -- CMD         # register a long-running service
+sundocked wait-for HOST:PORT              # block until a service is reachable
+```
+
+For the full help with workflows, agent playbooks, troubleshooting, and config reference:
+
+```bash
+sundocked --detailed-help
+```
 
 ## Install
 
-### Via npm (recommended)
+### Via npm
 
-```cmd
-npm install -g sunboxed
+```bash
+npm install -g sundohed
 ```
 
-This installs the `sunboxed` command globally.
-
-### Via npx (no install)
-
-```cmd
-npx sunboxed node build.js
-```
+This installs `sundocked`, `sundocked-cc`, `sundohed`, and `sundohed-cc` globally.
 
 ### From source
 
-```cmd
+```bash
 git clone https://github.com/PHPCraftdream/SunBoxed.git
 cd SunBoxed
 npm install
+# add ./scripts/ to PATH, or invoke ./bin/*.js directly via node
 ```
 
-Then add the `scripts\` folder to your PATH manually.
+### Requirements
 
-## Usage
+- Node.js 18+
+- Docker — Docker Desktop on Windows/Mac, or `docker` daemon on Linux
+- Linux containers (default; the Docker daemon's WSL2 backend on Windows is fine)
 
-```cmd
-sunboxed <command> [args...]        Run command in sandbox
-sunboxed /reset                     Clear overlay for current directory
-sunboxed /snap create <name>        Save CWD snapshot
-sunboxed /snap list                 List snapshots with dates
-sunboxed /snap restore <name>       Restore CWD to snapshot
-sunboxed /snap delete <name>        Delete snapshot
-```
+## Configuration
 
-### Flags
-
-| Flag | Effect |
-|------|--------|
-| `/net-block` | Block all network access (see [note on localhost](#known-limitations)) |
-| `/readonly` | CWD is also sandboxed (read-only analysis) |
-| `/no-pty` | Disable ConPTY relay (force hidden window mode) |
-| `/show` | Show command window (default: hidden in non-TTY mode) |
-| `/tty` | Launch in a separate terminal emulator (WezTerm/WT) |
-| `/allow:<path>` | Only allow writes to specific subdirs (relative to CWD) |
-| `/deny:<path>` | Block all access to specific files/dirs (relative to CWD) |
-
-### Examples
-
-```cmd
-:: Run node script, only CWD writable
-sunboxed node build.js
-
-:: Interactive TUI app in sandbox (auto-detects terminal)
-sunboxed claude
-
-:: Only allow writes to src/ and dist/
-sunboxed /allow:src /allow:dist -- node build.js
-
-:: Block network + protect .env
-sunboxed /net-block /deny:.env node app.js
-
-:: Read-only analysis (no writes anywhere on real disk)
-sunboxed /readonly node analyze.js
-
-:: Snapshot before risky agent run, restore if needed
-sunboxed /snap create before-refactor
-sunboxed claude
-sunboxed /snap restore before-refactor
-```
-
-## How It Works
+Per-directory `config.ktav` (Ktav 0.3.0 format) lives at `..\.sundocked\<dirname>\config.ktav`. Stores image, ports, env, services, network mode. Hand-editable.
 
 ```
-D:\projects\
-├── myapp\              ← CWD, direct read/write (OpenFilePath)
-└── .sbox\
-    └── myapp\          ← overlay (sandboxed writes land here)
-        ├── drive\      ← virtual filesystem
-        ├── user\       ← virtual user profile
-        └── RegHive     ← virtual registry
+defaultImage: node:22-slim
+ports: [
+    8080:80
+    5432:5432
+]
+env: [
+    NODE_ENV=development
+]
+services: [
+    { name: php-fpm   cmd: php-fpm -F }
+    { name: nginx     cmd: nginx -g 'daemon off;' }
+]
 ```
 
-Each directory gets its own Sandboxie box (name derived from SHA-256 hash of the full CWD path — collision-free) with hardened config:
-- `ConfigLevel=99` — no auto-templates
-- `Template=BlockPorts` — blocks SMB (ports 137-445)
-- `BlockNetworkFiles=y` — blocks network shares
-- `OpenIpcPath=*` — allows IPC (required for relay)
-- SandMan GUI killed on each run (nag popup prevention)
+## Sandboxie history
 
-### Execution modes
+Earlier versions of this project (v0.1 / v0.2) wrapped Sandboxie-Plus instead of Docker — see the `sandboxie-archive` branch and the `sandboxie-final` tag for the last working state. The Sandboxie-Plus variant has been retired because:
 
-| Condition | Mode | How |
-|-----------|------|-----|
-| node-pty available (default) | **Relay** | TCP localhost, ConPTY inside sandbox |
-| no node-pty | **Hidden** | `Start.exe /hide_window /wait` (fallback) |
-| `/tty` flag | **Terminal** | Opens WezTerm/WT inside sandbox |
-| `/show` flag | **Visible** | `Start.exe /wait` (visible window) |
+- Sandboxie's kernel driver kept blocking ConPTY handshakes (`SetConsoleMode` EPERM), forcing a TCP relay workaround that was fragile across terminals.
+- `OpenPipePath=*` matching file paths broke filesystem isolation guarantees.
+- Container-level isolation (Docker namespaces) is cross-platform; Sandboxie is Windows-only.
+- The DoH-proxy story (escaping kernel-level DNS hijacks) has no Sandboxie equivalent.
 
-Overlay persists between runs — the app sees its own previously written files on next launch (cascading reads). Use `sunboxed /reset` to start fresh.
-
-### Snapshots
-
-Snapshots save a copy of **CWD only** (your project files). They do not capture the sandbox overlay (AppData, registry, temp written by the sandboxed app). For a full rollback:
-
-```cmd
-sunboxed /snap restore <name>    :: restore project files
-sunboxed /reset                  :: clear sandbox overlay
-```
-
-Stored at `..\.sbox\<dirname>\__snapshots__\<name>\`. Excludes `.git`, `node_modules`, `__pycache__` automatically.
-
-**Warning:** `.git` is excluded from snapshots. If the sandboxed agent made local commits that haven't been pushed, `snap restore` will not revert them (and won't lose them either). Use `git reflog` or `git reset` separately if needed.
-
-## Known Limitations
-
-- **Not a security boundary.** Sandboxie protects against accidents, not targeted sandbox-escape exploits. See [Security model](#security-model).
-- **`/net-block` does not block localhost.** Loopback connections (127.0.0.1, localhost) remain accessible. The relay itself uses localhost TCP. A sandboxed agent can still reach local services like Docker, Ollama, databases, or MCP servers. This is usually desirable for AI agents but worth knowing.
-- **GlobalSettings templates are inherited.** Sandboxie's global compatibility templates (Edge_Fix, OfficeLicensing, etc.) are inherited by all boxes. These operate on RPC/COM ports, not filesystem paths, and do not weaken filesystem isolation — but we cannot strip them per-box.
-- **SandMan is killed on every run.** If you use SandMan.exe for other sandboxes, SunBoxed will close it.
-- **Snapshots exclude `.git`.** Unpushed local commits survive `snap restore` (they're in `.git` which is untouched), but the working tree is rolled back.
-
-## Running Tests
-
-```bash
-npm test
-```
-
-51 assertions across 6 suites: filesystem isolation (CWD, parent, readonly, allow, deny, absolute paths, user profile), network blocking, overlay persistence, per-directory boxes, snapshots, TCP relay (auth, output, setRawMode, exit codes, sandbox marker).
-
-## Sandboxie Reference
-
-Low-level Sandboxie CLI documentation: [docs/sandboxie_docs/](docs/sandboxie_docs/)
+The lessons from sunboxed live on inside sundocked: the relay/init-script pattern, idempotent PID-file health checks, the `.cmd` wrapper for path-mangling-safe invocation, the hardened-by-default config surface.
 
 ## License
 
-[GPL-3.0](LICENSE) — same as [Sandboxie-Plus](https://github.com/sandboxie-plus/Sandboxie).
+[GPL-3.0](LICENSE).

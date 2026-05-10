@@ -1,23 +1,23 @@
 {
-  "name": "sunboxed",
-  "version": "0.2.0",
-  "description": "Run CLI commands in Sandboxie containers with filesystem isolation. Safe --dangerously-skip-permissions for AI coding agents.",
+  "name": "sundohed",
+  "version": "0.3.0",
+  "description": "Per-directory Docker isolation for AI coding agents. Bare CLI (sundocked) plus a DoH proxy variant (sundohed) that bypasses kernel-level DNS hijacks (Cisco Secure Client, Zscaler).",
   "license": "GPL-3.0",
   "bin": {
-    "sunboxed": "bin/sunboxed.js"
-  },
-  "scripts": {
-    "test": "node tests/run-all.js"
+    "sundocked": "bin/sundocked.js",
+    "sundocked-cc": "bin/sundocked-cc.js",
+    "sundohed": "bin/sundohed.js",
+    "sundohed-cc": "bin/sundohed-cc.js"
   },
   "keywords": [
-    "sandboxie",
-    "sandbox",
+    "docker",
     "isolation",
     "cli",
-    "security",
     "ai-agent",
     "claude-code",
-    "filesystem"
+    "doh",
+    "dns-over-https",
+    "sandbox"
   ],
   "repository": {
     "type": "git",
@@ -27,17 +27,27 @@
   "bugs": {
     "url": "https://github.com/PHPCraftdream/SunBoxed/issues"
   },
-  "os": [
-    "win32"
-  ],
   "files": [
-    "bin/",
-    "scripts/sunboxed.cmd",
+    "bin/sundocked.js",
+    "bin/sundocked-cc.js",
+    "bin/sundohed.js",
+    "bin/sundohed-cc.js",
+    "bin/sundohed-proxy.js",
+    "bin/dns-proxy-bin/",
+    "scripts/sundocked",
+    "scripts/sundocked.cmd",
+    "scripts/sundocked-cc",
+    "scripts/sundocked-cc.cmd",
+    "scripts/sundohed",
+    "scripts/sundohed.cmd",
+    "scripts/sundohed-cc",
+    "scripts/sundohed-cc.cmd",
+    "scripts/sundohed-init.sh",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "dependencies": {
-    "@ktav-lang/ktav": "^0.3.0",
-    "node-pty": "^1.1.0"
+    "@ktav-lang/ktav": "^0.3.0"
   }
 }
