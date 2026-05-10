@@ -117,12 +117,33 @@ const DEFAULT_BYPASS_HOSTS = [
   "repo.packagist.org",
   "proxy.golang.org",
   "sum.golang.org",
-  // anthropic / claude code
+  // AI providers — anthropic / claude code
   "api.anthropic.com",
   "console.anthropic.com",
   "statsig.anthropic.com",
   "claude.ai",
-  // github (used by many installers and claude code)
+  // AI providers — OpenAI / codex
+  "api.openai.com",
+  "openai.com",
+  "chat.openai.com",
+  // AI providers — Google Gemini
+  "generativelanguage.googleapis.com",
+  "aiplatform.googleapis.com",
+  "gemini.google.com",
+  // AI providers — xAI Grok
+  "api.x.ai",
+  "grok.com",
+  // AI providers — Qwen (Alibaba DashScope)
+  "dashscope.aliyuncs.com",
+  "dashscope-intl.aliyuncs.com",
+  // AI providers — DeepSeek
+  "api.deepseek.com",
+  "chat.deepseek.com",
+  // AI providers — GLM / Zhipu
+  "open.bigmodel.cn",
+  "api.bigmodel.cn",
+  "api.zhipuai.cn",
+  // github (used by many installers and AI agents)
   "github.com",
   "api.github.com",
   "raw.githubusercontent.com",
