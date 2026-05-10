@@ -643,8 +643,11 @@ if ! command -v claude >/dev/null 2>&1; then
   npm install -g @anthropic-ai/claude-code >&2
 fi
 exec claude --dangerously-skip-permissions "$@"`;
+  // Inside the sundocked container we are intentionally root; Claude Code
+  // refuses --dangerously-skip-permissions as root unless IS_SANDBOX=1 is set.
+  const ccEnv = [...(ctx.config.env || []), "IS_SANDBOX=1"];
   const code = runIn({
-    name: ctx.name, env: ctx.config.env, workdir: ctx.workdir, user: ctx.user, tty: true,
+    name: ctx.name, env: ccEnv, workdir: ctx.workdir, user: ctx.user, tty: true,
     cmd: ["sh", "-c", script, "sh", ...userArgs],
   });
   process.exit(code);
