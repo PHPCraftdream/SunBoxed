@@ -1472,9 +1472,14 @@ function parseArgs(argv) {
         break;
       }
     } else {
-      // user-command starts here — take everything verbatim
-      rest.push(...argv.slice(i));
-      break;
+      // After a subcommand, keep collecting positional/sub-subcommand
+      // tokens into `rest` while still recognizing global flags. The
+      // explicit `--` separator above is the way to pass flags through
+      // to a user-command verbatim. Without this, flags like `--json`
+      // placed after the subcommand (e.g. `service list --json`,
+      // `recipes --json`) wouldn't reach opts.
+      rest.push(a);
+      i++;
     }
   }
   return { opts, subcommand, rest };
@@ -1508,7 +1513,9 @@ async function main() {
     image = await selectImage();
     config.defaultImage = image;
     saveConfig(stateDir, config);
-  } else if (!config.defaultImage && !opts.image) {
+  } else if (!config.defaultImage) {
+    // First successful run for this directory — remember the image so
+    // subsequent invocations without --image don't re-trigger the picker.
     config.defaultImage = image;
     saveConfig(stateDir, config);
   }

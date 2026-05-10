@@ -10,7 +10,7 @@ failed=0
 ran=0
 skipped=0
 
-for t in test-doh-proxy.sh test-sundocked.sh test-sundohed.sh; do
+for t in test-hooks.sh test-doh-proxy.sh test-sundocked.sh test-sundocked-services.sh test-sundohed.sh test-sundohed-disable.sh; do
     echo
     echo "===> $t"
     if ! out=$(bash "./$t" 2>&1); then
