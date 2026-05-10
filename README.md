@@ -99,7 +99,7 @@ sundocked --detailed-help
 ### Via npm
 
 ```bash
-npm install -g sundohed
+npm install -g sundocked
 ```
 
 This installs `sundocked`, `sundocked-cc`, `sundohed`, and `sundohed-cc` globally.
@@ -107,8 +107,8 @@ This installs `sundocked`, `sundocked-cc`, `sundohed`, and `sundohed-cc` globall
 ### From source
 
 ```bash
-git clone https://github.com/PHPCraftdream/SunBoxed.git
-cd SunBoxed
+git clone https://github.com/PHPCraftdream/sundocked.git
+cd sundocked
 npm install
 # add ./scripts/ to PATH, or invoke ./bin/*.js directly via node
 ```

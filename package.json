@@ -1,5 +1,5 @@
 {
-  "name": "sundohed",
+  "name": "sundocked",
   "version": "0.3.0",
   "description": "Per-directory Docker isolation for AI coding agents. Bare CLI (sundocked) plus a DoH proxy variant (sundohed) that bypasses kernel-level DNS hijacks (Cisco Secure Client, Zscaler).",
   "license": "GPL-3.0",
@@ -21,14 +21,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/PHPCraftdream/SunBoxed.git"
+    "url": "https://github.com/PHPCraftdream/sundocked.git"
   },
-  "homepage": "https://github.com/PHPCraftdream/SunBoxed",
+  "homepage": "https://github.com/PHPCraftdream/sundocked",
   "scripts": {
     "test": "bash tests/run-all.sh"
   },
   "bugs": {
-    "url": "https://github.com/PHPCraftdream/SunBoxed/issues"
+    "url": "https://github.com/PHPCraftdream/sundocked/issues"
   },
   "files": [
     "bin/sundocked.js",
