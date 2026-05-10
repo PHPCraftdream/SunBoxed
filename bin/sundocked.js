@@ -95,116 +95,6 @@ function getHostDns() {
   } catch { return ["1.1.1.1", "8.8.8.8"]; }
 }
 
-// Hostnames that frequently get hijacked by enterprise DNS filters
-// (Cisco Umbrella, Zscaler, etc.). When system DNS returns 127.x for
-// public hostnames, these are resolved via DoH and added to the
-// container's /etc/hosts via --add-host.
-const DEFAULT_BYPASS_HOSTS = [
-  // package registries
-  "registry.npmjs.org",
-  "registry.yarnpkg.com",
-  "pypi.org",
-  "files.pythonhosted.org",
-  "deb.debian.org",
-  "security.debian.org",
-  "archive.ubuntu.com",
-  "security.ubuntu.com",
-  "dl-cdn.alpinelinux.org",
-  "repo.maven.apache.org",
-  "crates.io",
-  "static.crates.io",
-  "packagist.org",
-  "repo.packagist.org",
-  "proxy.golang.org",
-  "sum.golang.org",
-  // AI providers — anthropic / claude code
-  "api.anthropic.com",
-  "console.anthropic.com",
-  "statsig.anthropic.com",
-  "claude.ai",
-  // AI providers — OpenAI / codex
-  "api.openai.com",
-  "openai.com",
-  "chat.openai.com",
-  // AI providers — Google Gemini
-  "generativelanguage.googleapis.com",
-  "aiplatform.googleapis.com",
-  "gemini.google.com",
-  // AI providers — xAI Grok
-  "api.x.ai",
-  "grok.com",
-  // AI providers — Qwen (Alibaba DashScope)
-  "dashscope.aliyuncs.com",
-  "dashscope-intl.aliyuncs.com",
-  // AI providers — DeepSeek
-  "api.deepseek.com",
-  "chat.deepseek.com",
-  // AI providers — GLM / Zhipu
-  "open.bigmodel.cn",
-  "api.bigmodel.cn",
-  "api.zhipuai.cn",
-  // github (used by many installers and AI agents)
-  "github.com",
-  "api.github.com",
-  "raw.githubusercontent.com",
-  "objects.githubusercontent.com",
-  "codeload.github.com",
-];
-
-function dohResolve(name, type = "A") {
-  const url = `https://1.1.1.1/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
-  return new Promise((resolve) => {
-    const req = https.get(url, { headers: { "Accept": "application/dns-json" } }, res => {
-      let body = "";
-      res.on("data", c => body += c);
-      res.on("end", () => {
-        try {
-          const data = JSON.parse(body);
-          const wantType = type === "A" ? 1 : 28;
-          const ips = (data.Answer || []).filter(a => a.type === wantType).map(a => a.data);
-          resolve(ips);
-        } catch { resolve([]); }
-      });
-    });
-    req.setTimeout(5000, () => { req.destroy(); resolve([]); });
-    req.on("error", () => resolve([]));
-  });
-}
-
-function isHijackedAnswer(addrs) {
-  return Array.isArray(addrs) && addrs.length > 0 &&
-    addrs.every(a => /^127\./.test(a) || /^0\./.test(a) || a === "0.0.0.0");
-}
-
-function detectDnsHijack() {
-  return new Promise(resolve => {
-    // Use a globally well-known hostname unlikely to be classified by filters
-    dns.resolve4("cloudflare.com", (err, addrs) => {
-      if (err) return resolve(false);
-      resolve(isHijackedAnswer(addrs));
-    });
-  });
-}
-
-async function buildAddHostFlags(extraHosts = []) {
-  const hijacked = await detectDnsHijack();
-  if (!hijacked) return { flags: [], hijacked: false, mappings: [] };
-  const hosts = [...new Set([...DEFAULT_BYPASS_HOSTS, ...extraHosts])];
-  const flags = [];
-  const mappings = [];
-  const results = await Promise.all(hosts.map(h => dohResolve(h, "A")));
-  for (let i = 0; i < hosts.length; i++) {
-    const host = hosts[i];
-    const ips = results[i];
-    if (ips.length) {
-      const ip = ips[0];
-      flags.push("--add-host", `${host}:${ip}`);
-      mappings.push({ host, ip });
-    }
-  }
-  return { flags, hijacked: true, mappings };
-}
-
 function detectOS() {
   const platform = process.platform;
   const info = { platform, isWin: platform === "win32", isMac: platform === "darwin", isLinux: platform === "linux" };
@@ -336,6 +226,27 @@ function saveConfig(stateDir, config) {
   if (fs.existsSync(jsonFile)) { try { fs.unlinkSync(jsonFile); } catch {} }
 }
 
+// ---- Hooks ----
+// Wrappers like sundohed register callbacks here to extend container
+// lifecycle without forking the file. Hook signatures:
+//   afterContainerStart({ name, image, config, opts, fresh })
+//     fresh: true if the container was just created (vs. only restarted)
+const hooks = {
+  afterContainerStart: null,
+};
+
+function setHooks(h) {
+  for (const k of Object.keys(h)) {
+    if (k in hooks) hooks[k] = h[k];
+  }
+}
+
+async function callHook(name, payload) {
+  const fn = hooks[name];
+  if (!fn) return;
+  try { await fn(payload); } catch (e) { console.error(`hook ${name} failed:`, e.message); }
+}
+
 // ---- Container lifecycle ----
 const BASE_ENV = [
   "-e", "LANG=C.UTF-8",
@@ -365,7 +276,13 @@ function networkFlagsFromConfig(config) {
 
 async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} }) {
   const state = containerState(name);
-  if (state === "running") return;
+  if (state === "running") {
+    // Hook still fires here so wrappers (sundohed) can re-verify their
+    // in-container setup. The hook is responsible for being idempotent
+    // and cheap when nothing needs doing.
+    await callHook("afterContainerStart", { name, image, config, opts, fresh: false });
+    return;
+  }
   if (state === "exited" || state === "created" || state === "paused") {
     if (state === "paused") docker(["unpause", name]);
     const r = docker(["start", name]);
@@ -374,6 +291,7 @@ async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} })
       console.error(r.stderr);
       process.exit(1);
     }
+    await callHook("afterContainerStart", { name, image, config, opts, fresh: false });
     return;
   }
   if (!imagePresent(image)) {
@@ -389,11 +307,6 @@ async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} })
   if (!networkFlags.length) {
     for (const d of getHostDns()) dnsFlags.push("--dns", d);
   }
-  const { flags: addHostFlags, hijacked, mappings } = await buildAddHostFlags(config.extraHosts || []);
-  if (hijacked && !opts.quiet) {
-    console.log(`Host DNS appears hijacked (returns 127.x for public hosts).`);
-    console.log(`Resolved ${mappings.length} hosts via DoH and pinned them via --add-host.`);
-  }
   const args = [
     "run", "-d", "--name", name,
     "-v", `${cwd}:/work`,
@@ -401,7 +314,6 @@ async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} })
     "-w", "/work",
     ...networkFlags,
     ...dnsFlags,
-    ...addHostFlags,
     ...BASE_ENV,
     ...envFlagsFromConfig(config),
     ...portFlagsFromConfig(config),
@@ -418,6 +330,7 @@ async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} })
     }
     process.exit(1);
   }
+  await callHook("afterContainerStart", { name, image, config, opts, fresh: true });
 }
 
 function destroyContainer(name) {
@@ -666,6 +579,14 @@ async function cmdInstall(ctx, packages) {
 
 async function cmdCc(ctx, userArgs) {
   await prepare(ctx);
+  // First-time setup is gated by /var/lib/sundocked/cc-installed so we
+  // run npm only once per container. npm self-update is done via
+  // corepack — "npm install -g npm@latest" famously corrupts itself
+  // mid-replace (loses dependencies like promise-retry from arborist),
+  // whereas corepack downloads to a separate cache and atomically
+  // re-points the shim. If corepack is unavailable (older nodes), we
+  // silence the update-notifier instead of attempting the broken self
+  // -upgrade — a cosmetic compromise but never breaks the install.
   const script = `set -e
 if ! command -v claude >/dev/null 2>&1; then
   if ! command -v npm >/dev/null 2>&1; then
@@ -673,8 +594,20 @@ if ! command -v claude >/dev/null 2>&1; then
     echo "  sundocked switch  # pick another image" >&2
     exit 127
   fi
+  if command -v corepack >/dev/null 2>&1; then
+    echo "Updating npm via corepack..." >&2
+    # prepare downloads + caches npm@latest; enable npm rewrites
+    # /usr/local/bin/npm to a corepack shim that uses the prepared
+    # version. Without "enable npm" the bundled npm wins in PATH.
+    corepack prepare npm@latest --activate >&2 \
+      && corepack enable npm >&2 \
+      || echo "(corepack npm update failed, continuing with npm $(npm -v))" >&2
+  else
+    npm config set update-notifier false >/dev/null 2>&1 || true
+  fi
   echo "Installing @anthropic-ai/claude-code (one-time setup)..." >&2
   npm install -g @anthropic-ai/claude-code >&2
+  mkdir -p /var/lib/sundocked && touch /var/lib/sundocked/cc-installed
 fi
 exec claude --dangerously-skip-permissions "$@"`;
   // Inside the sundocked container we are intentionally root; Claude Code
@@ -1078,6 +1011,12 @@ GLOBAL FLAGS:
   --help, -h                   short help
   --detailed-help              long help with examples and agent-oriented notes
 
+VARIANTS:
+  sundocked      this CLI — bare Docker wrapper, no DNS magic
+  sundohed       same CLI + in-container DoH proxy (bypasses kernel-level
+                 DNS hijacks like Cisco Secure Client, Zscaler)
+  sundohed-cc    sundohed with the "cc" subcommand auto-injected
+
 For full help: sundocked --detailed-help`);
 }
 
@@ -1104,6 +1043,33 @@ WHY
 4. Reproducible: one config.ktav file → same environment for everyone
 
 ═══════════════════════════════════════════════════════════════════════════════
+VARIANTS (sundocked / sundohed / sundohed-cc)
+═══════════════════════════════════════════════════════════════════════════════
+
+Three entry points, same engine:
+
+  sundocked      Bare Docker wrapper — what this help describes. No DNS
+                 modifications inside the container. Use this when the
+                 host's DNS works fine.
+
+  sundohed       sundocked + a tiny Go DoH proxy auto-installed in every
+                 container it creates. /etc/resolv.conf is rewritten to
+                 127.0.0.1; queries leave the container as HTTPS to
+                 public DoH servers. Use this on networks where UDP:53
+                 is hijacked at the kernel level (Cisco Secure Client
+                 / acsock64.sys, Zscaler, Umbrella, etc.) — symptoms:
+                 npm/pip/apt resolve to 127.x.x.x and refuse connections.
+
+  sundohed-cc    sundohed with "cc" prepended — one-shot launcher for
+                 Claude Code. "sundohed-cc --image node:22-slim" ==
+                 "sundohed cc --image node:22-slim".
+
+All three accept the same subcommands and flags below. Whichever entry
+point creates the container "wins": once a container exists with a DoH
+proxy, plain "sundocked exec ..." against the same dir will use it (the
+proxy is already running inside). To start clean: sundocked reset.
+
+═══════════════════════════════════════════════════════════════════════════════
 QUICK START (30 seconds)
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1113,6 +1079,11 @@ QUICK START (30 seconds)
 
   # OR for agents (no interactive shell):
   sundocked --image node:22-slim exec npm test
+
+  # If npm/apt fails with "ECONNREFUSED 127.x.x.x" — use sundohed instead:
+  sundocked reset                    # wipe the broken container
+  sundohed --image node:22-slim
+  npm install                         # now goes through the in-container DoH proxy
 
 ═══════════════════════════════════════════════════════════════════════════════
 HOW IT WORKS
@@ -1300,11 +1271,20 @@ CLAUDE CODE WORKFLOW
   # Claude Code now runs inside the container with /work as CWD; it can ONLY
   # write inside the project — host files outside the dir are unreachable.
 
+  # Shorter:
+  sundohed-cc --image node:22-slim         # == "sundohed cc --image ..."
+
   # Resume a previous Claude session:
-  sundocked cc --resume
+  sundocked cc --resume                    # or: sundohed-cc --resume
 
   # Use "node:22-slim" or "node:22-alpine" so npm is present;
   # "node:22-bookworm" if you need glibc-based native modules.
+
+  # On networks where DNS is hijacked at the kernel level (corporate
+  # VPN endpoint security drivers): use sundohed-cc instead. It auto-
+  # installs an in-container DoH proxy so npm/pip/apt and Anthropic API
+  # both work without per-domain --add-host entries.
+  sundohed-cc --image node:22-slim
 
 ═══════════════════════════════════════════════════════════════════════════════
 NOTES FOR AI AGENTS
@@ -1362,9 +1342,9 @@ TROUBLESHOOTING
 • "docker daemon is not running"
     → launch Docker Desktop, wait for "Engine running" indicator
 
-• "ECONNREFUSED registry.npmjs.org" / "127.x.x.x" hijacked DNS
-    → Docker Desktop "Hub Proxy" is intercepting; Settings → Resources →
-      Proxies → set "No proxy", or settings-store.json → "WslEngineEnabled": true
+• "ECONNREFUSED 127.x.x.x" hijacked DNS (Cisco/Zscaler/etc kernel filter)
+    → use the sundohed wrapper instead — it adds an in-container DoH proxy
+      that bypasses kernel-level DNS hijacks via TCP:443
 
 • "EOF on docker pipe"
     → Docker Desktop hung; tray → Restart Docker
@@ -1417,6 +1397,13 @@ SEE ALSO
   sundocked recipes --json        # machine-readable recipe catalog
   sundocked status --json         # current container state
   sundocked list --json           # all sundocked containers on this host
+
+  sundohed                        # this CLI + in-container DoH proxy
+  sundohed-cc                     # sundohed cc (one-shot Claude Code launcher)
+
+When a corporate VPN/endpoint-security driver hijacks UDP:53 (symptoms:
+"ECONNREFUSED 127.x.x.x" on every install or API call), the sundohed
+variants handle it transparently — see VARIANTS at the top of this help.
 `);
 }
 
@@ -1428,7 +1415,10 @@ const SUBCOMMANDS = new Set([
 ]);
 
 const FLAGS_WITH_VALUE = new Set(["--image", "--port", "--env", "--user", "--workdir"]);
-const FLAGS_BOOL = new Set(["--tty", "--json", "--quiet", "--help", "-h", "--detailed-help", "--host-network"]);
+const FLAGS_BOOL = new Set([
+  "--tty", "--json", "--quiet", "--help", "-h", "--detailed-help",
+  "--host-network",
+]);
 
 function parseArgs(argv) {
   const opts = {
@@ -1561,4 +1551,8 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+module.exports = { main, setHooks };
+
+if (require.main === module) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}

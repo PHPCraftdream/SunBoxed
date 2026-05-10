@@ -10,6 +10,9 @@ tests/_exp_*
 # Sandbox overlays
 .sbox/
 
+# sundocked / sundohed per-directory state (created next to CWD)
+.sundocked/
+
 # Screenshots / temp
 *.png
 *.tmp
