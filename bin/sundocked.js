@@ -95,6 +95,82 @@ function getHostDns() {
   } catch { return ["1.1.1.1", "8.8.8.8"]; }
 }
 
+// Hostnames that frequently get hijacked by enterprise DNS filters
+// (Cisco Umbrella, Zscaler, etc.). When system DNS returns 127.x for
+// public hostnames, these are resolved via DoH and added to the
+// container's /etc/hosts via --add-host.
+const COMMON_REGISTRIES = [
+  "registry.npmjs.org",
+  "registry.yarnpkg.com",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "deb.debian.org",
+  "security.debian.org",
+  "archive.ubuntu.com",
+  "security.ubuntu.com",
+  "dl-cdn.alpinelinux.org",
+  "repo.maven.apache.org",
+  "crates.io",
+  "static.crates.io",
+  "packagist.org",
+  "repo.packagist.org",
+  "proxy.golang.org",
+  "sum.golang.org",
+];
+
+function dohResolve(name, type = "A") {
+  const url = `https://1.1.1.1/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
+  return new Promise((resolve) => {
+    const req = https.get(url, { headers: { "Accept": "application/dns-json" } }, res => {
+      let body = "";
+      res.on("data", c => body += c);
+      res.on("end", () => {
+        try {
+          const data = JSON.parse(body);
+          const wantType = type === "A" ? 1 : 28;
+          const ips = (data.Answer || []).filter(a => a.type === wantType).map(a => a.data);
+          resolve(ips);
+        } catch { resolve([]); }
+      });
+    });
+    req.setTimeout(5000, () => { req.destroy(); resolve([]); });
+    req.on("error", () => resolve([]));
+  });
+}
+
+function isHijackedAnswer(addrs) {
+  return Array.isArray(addrs) && addrs.length > 0 &&
+    addrs.every(a => /^127\./.test(a) || /^0\./.test(a) || a === "0.0.0.0");
+}
+
+function detectDnsHijack() {
+  return new Promise(resolve => {
+    // Use a globally well-known hostname unlikely to be classified by filters
+    dns.resolve4("cloudflare.com", (err, addrs) => {
+      if (err) return resolve(false);
+      resolve(isHijackedAnswer(addrs));
+    });
+  });
+}
+
+async function buildAddHostFlags() {
+  const hijacked = await detectDnsHijack();
+  if (!hijacked) return { flags: [], hijacked: false, mappings: [] };
+  const flags = [];
+  const mappings = [];
+  const results = await Promise.all(COMMON_REGISTRIES.map(h => dohResolve(h, "A")));
+  for (let i = 0; i < COMMON_REGISTRIES.length; i++) {
+    const host = COMMON_REGISTRIES[i];
+    const ips = results[i];
+    if (ips.length) {
+      const ip = ips[0];
+      flags.push("--add-host", `${host}:${ip}`);
+      mappings.push({ host, ip });
+    }
+  }
+  return { flags, hijacked: true, mappings };
+}
+
 function detectOS() {
   const platform = process.platform;
   const info = { platform, isWin: platform === "win32", isMac: platform === "darwin", isLinux: platform === "linux" };
@@ -248,7 +324,12 @@ function portFlagsFromConfig(config) {
   return out;
 }
 
-function ensureContainer({ name, image, cwd, homeDir, config }) {
+function networkFlagsFromConfig(config) {
+  if (config.network === "host") return ["--network", "host"];
+  return [];
+}
+
+async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} }) {
   const state = containerState(name);
   if (state === "running") return;
   if (state === "exited" || state === "created" || state === "paused") {
@@ -269,14 +350,24 @@ function ensureContainer({ name, image, cwd, homeDir, config }) {
     if (sz) console.log(`Image installed, on-disk size: ${sz}`);
   }
   fs.mkdirSync(homeDir, { recursive: true });
+  const networkFlags = networkFlagsFromConfig(config);
   const dnsFlags = [];
-  for (const d of getHostDns()) dnsFlags.push("--dns", d);
+  if (!networkFlags.length) {
+    for (const d of getHostDns()) dnsFlags.push("--dns", d);
+  }
+  const { flags: addHostFlags, hijacked, mappings } = await buildAddHostFlags();
+  if (hijacked && !opts.quiet) {
+    console.log(`Host DNS appears hijacked (returns 127.x for public hosts).`);
+    console.log(`Resolved ${mappings.length} common registries via DoH and pinned them via --add-host.`);
+  }
   const args = [
     "run", "-d", "--name", name,
     "-v", `${cwd}:/work`,
     "-v", `${homeDir}:/root`,
     "-w", "/work",
+    ...networkFlags,
     ...dnsFlags,
+    ...addHostFlags,
     ...BASE_ENV,
     ...envFlagsFromConfig(config),
     ...portFlagsFromConfig(config),
@@ -885,6 +976,9 @@ async function prepare(ctx) {
     for (const e of ctx.opts.env) if (!set.has(e)) { set.add(e); configChanged = true; }
     ctx.config.env = [...set];
   }
+  if (ctx.opts.hostNetwork && ctx.config.network !== "host") {
+    ctx.config.network = "host"; configChanged = true;
+  }
   if (configChanged) saveConfig(ctx.stateDir, ctx.config);
 
   const existing = containerInspect(ctx.name);
@@ -895,9 +989,9 @@ async function prepare(ctx) {
     }
   }
 
-  ensureContainer({
+  await ensureContainer({
     name: ctx.name, image: ctx.image, cwd: ctx.cwd,
-    homeDir: ctx.homeDir, config: ctx.config,
+    homeDir: ctx.homeDir, config: ctx.config, opts: ctx.opts,
   });
 }
 
@@ -940,6 +1034,8 @@ GLOBAL FLAGS:
   --user USER                  run exec as USER (default: root)
   --workdir DIR                working directory inside container (default: /work)
   --tty                        force TTY for exec (default: non-TTY)
+  --host-network               run container with --network=host (bypasses Docker
+                               bridge & DNS; persisted to config; needs reset)
   --json                       machine-readable output (for status/list)
   --quiet                      suppress decorative messages
   --help, -h                   short help
@@ -1295,12 +1391,12 @@ const SUBCOMMANDS = new Set([
 ]);
 
 const FLAGS_WITH_VALUE = new Set(["--image", "--port", "--env", "--user", "--workdir"]);
-const FLAGS_BOOL = new Set(["--tty", "--json", "--quiet", "--help", "-h", "--detailed-help"]);
+const FLAGS_BOOL = new Set(["--tty", "--json", "--quiet", "--help", "-h", "--detailed-help", "--host-network"]);
 
 function parseArgs(argv) {
   const opts = {
     image: null, ports: [], env: [], user: null, workdir: null,
-    tty: false, json: false, quiet: false,
+    tty: false, json: false, quiet: false, hostNetwork: false,
     help: false, detailedHelp: false,
   };
   let subcommand = null;
@@ -1319,6 +1415,7 @@ function parseArgs(argv) {
       else if (a === "--tty") opts.tty = true;
       else if (a === "--json") opts.json = true;
       else if (a === "--quiet") opts.quiet = true;
+      else if (a === "--host-network") opts.hostNetwork = true;
       i++;
     } else if (FLAGS_WITH_VALUE.has(a)) {
       const val = argv[++i];
