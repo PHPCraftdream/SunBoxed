@@ -38,8 +38,6 @@ scripts/
 └── sundohed-init.sh          — runs INSIDE container; rewrites /etc/resolv.conf, starts proxy
 ```
 
-Sandboxie-era code (`bin/sunboxed*`, `tests/`, `docs/sandboxie_docs/`) was retired in v0.3.0 — see `sandboxie-archive` branch and `sandboxie-final` tag for the last working state.
-
 ## Architecture
 
 ### Hook-based extension

@@ -138,17 +138,6 @@ services: [
 ]
 ```
 
-## Sandboxie history
-
-Earlier versions of this project (v0.1 / v0.2) wrapped Sandboxie-Plus instead of Docker — see the `sandboxie-archive` branch and the `sandboxie-final` tag for the last working state. The Sandboxie-Plus variant has been retired because:
-
-- Sandboxie's kernel driver kept blocking ConPTY handshakes (`SetConsoleMode` EPERM), forcing a TCP relay workaround that was fragile across terminals.
-- `OpenPipePath=*` matching file paths broke filesystem isolation guarantees.
-- Container-level isolation (Docker namespaces) is cross-platform; Sandboxie is Windows-only.
-- The DoH-proxy story (escaping kernel-level DNS hijacks) has no Sandboxie equivalent.
-
-The lessons from sunboxed live on inside sundocked: the relay/init-script pattern, idempotent PID-file health checks, the `.cmd` wrapper for path-mangling-safe invocation, the hardened-by-default config surface.
-
 ## License
 
 [GPL-3.0](LICENSE).

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: JS syntax check
+        run: |
+          for f in bin/sundocked.js bin/sundocked-cc.js bin/sundohed.js bin/sundohed-cc.js bin/sundohed-proxy.js; do
+            echo "=== $f ==="
+            node -c "$f"
+          done
+
+      - name: Go vet + build
+        working-directory: dns-proxy
+        run: |
+          go vet ./...
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/proxy-amd64 .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/proxy-arm64 .
+          ls -la /tmp/proxy-amd64 /tmp/proxy-arm64
+
+      - name: Verify committed binaries match a fresh build
+        run: |
+          # Sanity check that the binaries shipped in the repo are reproducible
+          # from current source. Drift is non-fatal here — the publish
+          # workflow rebuilds anyway — but we want a warning on PRs that
+          # touch dns-proxy/* without refreshing bin/.
+          cmp /tmp/proxy-amd64 bin/dns-proxy-bin/sundocked-dns-linux-amd64 && echo "amd64 ok" || \
+            echo "::warning::bin/dns-proxy-bin/sundocked-dns-linux-amd64 differs from a fresh build (publish will rebuild)"
+          cmp /tmp/proxy-arm64 bin/dns-proxy-bin/sundocked-dns-linux-arm64 && echo "arm64 ok" || \
+            echo "::warning::bin/dns-proxy-bin/sundocked-dns-linux-arm64 differs from a fresh build (publish will rebuild)"
+
+      - name: Install ca-certificates (host system, used by setup-go)
+        run: sudo apt-get update -qq && sudo apt-get install -qq -y ca-certificates
+
+      - name: Integration tests
+        # Refresh the committed binary so the test runs the just-built code,
+        # then run the full suite. Tests self-skip when their preconditions
+        # are missing (e.g. test-sundocked when docker daemon is unavailable).
+        run: |
+          cp /tmp/proxy-amd64 bin/dns-proxy-bin/sundocked-dns-linux-amd64
+          chmod +x bin/dns-proxy-bin/*
+          bash tests/run-all.sh

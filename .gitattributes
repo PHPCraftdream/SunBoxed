@@ -1,0 +1,10 @@
+# Keep shell scripts and the in-container init.sh as LF — Linux refuses
+# to execute scripts with CRLF line endings ("/bin/sh^M: bad interpreter").
+*.sh        text eol=lf
+scripts/sundocked   text eol=lf
+scripts/sundocked-cc text eol=lf
+scripts/sundohed    text eol=lf
+scripts/sundohed-cc text eol=lf
+
+# Go binaries are binary; never touch them.
+bin/dns-proxy-bin/* binary

@@ -24,6 +24,9 @@
     "url": "https://github.com/PHPCraftdream/SunBoxed.git"
   },
   "homepage": "https://github.com/PHPCraftdream/SunBoxed",
+  "scripts": {
+    "test": "bash tests/run-all.sh"
+  },
   "bugs": {
     "url": "https://github.com/PHPCraftdream/SunBoxed/issues"
   },

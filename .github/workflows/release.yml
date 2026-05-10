@@ -18,7 +18,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            scripts/sunboxed.cmd
-            scripts/cc75.cmd
-            scripts/sunboxed-install-user.cmd
-            scripts/sunboxed-install-system.cmd
+            bin/dns-proxy-bin/sundocked-dns-linux-amd64
+            bin/dns-proxy-bin/sundocked-dns-linux-arm64
