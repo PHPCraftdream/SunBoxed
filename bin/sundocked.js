@@ -4,6 +4,7 @@ const fs = require("fs");
 const net = require("net");
 const http = require("http");
 const https = require("https");
+const dns = require("dns");
 const path = require("path");
 const readline = require("readline");
 const ktav = require("@ktav-lang/ktav");
@@ -84,6 +85,15 @@ function containerName(dirname, image) {
 
 function imageStateDir(stateDir, image) { return path.join(stateDir, sanitize(image)); }
 function homeDirFor(stateDir, image)    { return path.join(imageStateDir(stateDir, image), "home"); }
+
+function getHostDns() {
+  try {
+    const servers = (dns.getServers() || [])
+      .map(s => String(s).split("%")[0])
+      .filter(s => s && s !== "::1" && s !== "127.0.0.1" && !s.startsWith("fe80:"));
+    return servers.length ? servers : ["1.1.1.1", "8.8.8.8"];
+  } catch { return ["1.1.1.1", "8.8.8.8"]; }
+}
 
 function detectOS() {
   const platform = process.platform;
@@ -259,13 +269,14 @@ function ensureContainer({ name, image, cwd, homeDir, config }) {
     if (sz) console.log(`Image installed, on-disk size: ${sz}`);
   }
   fs.mkdirSync(homeDir, { recursive: true });
+  const dnsFlags = [];
+  for (const d of getHostDns()) dnsFlags.push("--dns", d);
   const args = [
     "run", "-d", "--name", name,
     "-v", `${cwd}:/work`,
     "-v", `${homeDir}:/root`,
     "-w", "/work",
-    "--dns", "1.1.1.1",
-    "--dns", "8.8.8.8",
+    ...dnsFlags,
     ...BASE_ENV,
     ...envFlagsFromConfig(config),
     ...portFlagsFromConfig(config),
