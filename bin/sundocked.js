@@ -99,7 +99,8 @@ function getHostDns() {
 // (Cisco Umbrella, Zscaler, etc.). When system DNS returns 127.x for
 // public hostnames, these are resolved via DoH and added to the
 // container's /etc/hosts via --add-host.
-const COMMON_REGISTRIES = [
+const DEFAULT_BYPASS_HOSTS = [
+  // package registries
   "registry.npmjs.org",
   "registry.yarnpkg.com",
   "pypi.org",
@@ -116,6 +117,17 @@ const COMMON_REGISTRIES = [
   "repo.packagist.org",
   "proxy.golang.org",
   "sum.golang.org",
+  // anthropic / claude code
+  "api.anthropic.com",
+  "console.anthropic.com",
+  "statsig.anthropic.com",
+  "claude.ai",
+  // github (used by many installers and claude code)
+  "github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "codeload.github.com",
 ];
 
 function dohResolve(name, type = "A") {
@@ -153,14 +165,15 @@ function detectDnsHijack() {
   });
 }
 
-async function buildAddHostFlags() {
+async function buildAddHostFlags(extraHosts = []) {
   const hijacked = await detectDnsHijack();
   if (!hijacked) return { flags: [], hijacked: false, mappings: [] };
+  const hosts = [...new Set([...DEFAULT_BYPASS_HOSTS, ...extraHosts])];
   const flags = [];
   const mappings = [];
-  const results = await Promise.all(COMMON_REGISTRIES.map(h => dohResolve(h, "A")));
-  for (let i = 0; i < COMMON_REGISTRIES.length; i++) {
-    const host = COMMON_REGISTRIES[i];
+  const results = await Promise.all(hosts.map(h => dohResolve(h, "A")));
+  for (let i = 0; i < hosts.length; i++) {
+    const host = hosts[i];
     const ips = results[i];
     if (ips.length) {
       const ip = ips[0];
@@ -355,10 +368,10 @@ async function ensureContainer({ name, image, cwd, homeDir, config, opts = {} })
   if (!networkFlags.length) {
     for (const d of getHostDns()) dnsFlags.push("--dns", d);
   }
-  const { flags: addHostFlags, hijacked, mappings } = await buildAddHostFlags();
+  const { flags: addHostFlags, hijacked, mappings } = await buildAddHostFlags(config.extraHosts || []);
   if (hijacked && !opts.quiet) {
     console.log(`Host DNS appears hijacked (returns 127.x for public hosts).`);
-    console.log(`Resolved ${mappings.length} common registries via DoH and pinned them via --add-host.`);
+    console.log(`Resolved ${mappings.length} hosts via DoH and pinned them via --add-host.`);
   }
   const args = [
     "run", "-d", "--name", name,
